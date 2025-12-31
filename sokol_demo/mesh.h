@@ -33,6 +33,8 @@ struct Mesh {
 	sg_buffer vbuf{SG_INVALID_ID};
 	sg_buffer ibuf{SG_INVALID_ID};
 
+
+
 	void updateVertexBuffer() {
 		//free old
 		if(vbuf.id!=SG_INVALID_ID) sg_destroy_buffer(vbuf);
@@ -496,8 +498,9 @@ struct Mesh {
 						});
 				}
 			}
-		}
 
+		}
+		
 		file.close();
 
 		m.updateVertexBuffer();

@@ -51,6 +51,54 @@ struct Shape {
 	}
 };
 
+struct Object
+{
+	Mesh mesh;
+	sg_view tex{ SG_INVALID_ID };
+	bool draggable = false;
+	bool isbillboard = false;
+
+	vf3d scale{ 1, 1, 1 }, rotation, translation;
+	mat4 model = mat4::makeIdentity();
+	int num_x = 0, num_y = 0;
+	int num_ttl = 0;
+
+	float anim_timer = 0;
+	int anim = 0;
+
+	void updateMatrixes() {
+		//xyz euler angles?
+		mat4 rot_x = mat4::makeRotX(rotation.x);
+		mat4 rot_y = mat4::makeRotY(rotation.y);
+		mat4 rot_z = mat4::makeRotZ(rotation.z);
+		mat4 rot = mat4::mul(rot_z, mat4::mul(rot_y, rot_x));
+
+		mat4 scl = mat4::makeScale(scale);
+
+		mat4 trans = mat4::makeTranslation(translation);
+
+		//combine
+		model = mat4::mul(trans, mat4::mul(rot, scl));
+	}
+};
+
+struct
+{
+	vf3d pos{ 0,2,2 };
+	vf3d dir;
+	float yaw = 0;
+	float pitch = 0;
+	mat4 proj, view;
+	mat4 view_proj;
+}cam;
+
+struct Light
+{
+	vf3d pos;
+	sg_color col;
+
+};
+
 struct Demo : SokolEngine {
 	sg_pipeline default_pip{};
 	float radian = 0.0174532777777778;
@@ -62,6 +110,17 @@ struct Demo : SokolEngine {
 	int anim_index = 0;
 
 	sg_sampler sampler{};
+
+	std::vector<Light> lights;
+	Light* mainlight;
+
+	std::vector<Object> objects;
+	const std::vector<std::string> Structurefilenames{
+		"assets/models/desert.txt",
+		"assets/models/sandspeeder.txt",
+		"assets/models/tathouse1.txt",
+		"assets/models/tathouse2.txt",
+	};
 
 	sg_view tex_blank{};
 	sg_view tex_uv{};
@@ -75,19 +134,13 @@ struct Demo : SokolEngine {
 	bool contact_test = false;
 
 	//player camera test
-	vf3d player_pos, player_vel;
-	float player_height = 0.25f;
-	bool player_camera = false;
+	vf3d player_pos, player_vel, gravity = { 0,-1,0 };
+	float player_height = 0.25f, player_rad = 0.1f;
+	bool player_camera = false, player_on_ground = false;
 
-	struct {
-		Shape shp;
 
-		int num_x=0, num_y=0;
-		int num_ttl=0;
 
-		float anim_timer=0;
-		int anim=0;
-	} bb;
+
 
 	struct
 	{
@@ -111,6 +164,14 @@ struct Demo : SokolEngine {
 		desc.environment=sglue_environment();
 		sg_setup(desc);
 	}
+
+	void setupLights()
+	{
+		//white
+		lights.push_back({ {-1,3,1},{1,1,1,1} });
+		mainlight = &lights.back();
+		
+	}
 	
 	//primitive textures to debug with
 	void setupTextures() {
@@ -131,19 +192,35 @@ struct Demo : SokolEngine {
 		sampler=sg_make_sampler(sampler_desc);
 	}
 
+	void setupObjects()
+	{
+		Object b;
+		Mesh& m = b.mesh;
+		auto status = Mesh::loadFromOBJ(m, Structurefilenames[0]);
+		if (!status.valid) m = Mesh::makeCube();
+		b.scale = { 1,1,1 };
+		b.translation = { 0,-2,0 };
+		b.updateMatrixes();
+		b.tex = getTexture("assets/sandtexture.png");
+		objects.push_back(b);
+	}
+
 	void setupPlatform() {
-		Mesh& m=platform.mesh;
+		Object obj;
+		Mesh& m=obj.mesh;
 		m=Mesh::makeCube();
 
-		platform.tex=tex_uv;
+		obj.tex=tex_uv;
 		
-		platform.scale={2, .25f, 2};
-		platform.translation={0, -1, 0};
-		platform.updateMatrixes();
+		obj.scale={10, .25f, 10};
+		obj.translation={0, -1, 0};
+		obj.updateMatrixes();
+		objects.push_back(obj);
 	}
 
 	void setupBillboard() {
-		Mesh& m=bb.shp.mesh;
+		Object obj;
+		Mesh& m=obj.mesh;
 		m.verts={
 			{{-.5f, .5f, 0}, {0, 0, 1}, {0, 0}},//tl
 			{{.5f, .5f, 0}, {0, 0, 1}, {1, 0}},//tr
@@ -157,11 +234,13 @@ struct Demo : SokolEngine {
 		m.updateVertexBuffer();
 		m.updateIndexBuffer();
 
-		bb.shp.translation={0, 1, 0};
+		obj.translation={0, 1, 0};
+		obj.isbillboard = true;
 
-		bb.shp.tex=getTexture("assets/spritesheet.png");
-		bb.num_x=4, bb.num_y=4;
-		bb.num_ttl=bb.num_x*bb.num_y;
+		obj.tex=getTexture("assets/spritesheet.png");
+		obj.num_x=4, obj.num_y=4;
+		obj.num_ttl= obj.num_x*obj.num_y;
+		objects.push_back(obj);
 	}
 
 	void setup_Quad()
@@ -223,7 +302,9 @@ struct Demo : SokolEngine {
 
 		setupSampler();
 
-		setupPlatform();
+		setupLights();
+		//setupPlatform();
+		setupObjects();
 
 		setupBillboard();
 
@@ -237,16 +318,16 @@ struct Demo : SokolEngine {
 #pragma region UPDATE HELPERS
 	void handleCameraLooking(float dt) {
 		//left/right
-		if(getKey(SAPP_KEYCODE_LEFT).held) cam_yaw+=dt;
-		if(getKey(SAPP_KEYCODE_RIGHT).held) cam_yaw-=dt;
+		if(getKey(SAPP_KEYCODE_LEFT).held) cam.yaw+=dt;
+		if(getKey(SAPP_KEYCODE_RIGHT).held) cam.yaw-=dt;
 
 		//up/down
-		if(getKey(SAPP_KEYCODE_UP).held) cam_pitch+=dt;
-		if(getKey(SAPP_KEYCODE_DOWN).held) cam_pitch-=dt;
+		if(getKey(SAPP_KEYCODE_UP).held) cam.pitch+=dt;
+		if(getKey(SAPP_KEYCODE_DOWN).held) cam.pitch-=dt;
 
 		//clamp camera pitch
-		if(cam_pitch>Pi/2) cam_pitch=Pi/2-.001f;
-		if(cam_pitch<-Pi/2) cam_pitch=.001f-Pi/2;
+		if(cam.pitch>Pi/2) cam.pitch=Pi/2-.001f;
+		if(cam.pitch<-Pi/2) cam.pitch=.001f-Pi/2;
 
 		//turn player_camera off and on
 		if (getKey(SAPP_KEYCODE_Z).pressed)
@@ -254,42 +335,48 @@ struct Demo : SokolEngine {
 			if (!player_camera) {
 				
 				player_vel = { 0, 0, 0 };
+				player_on_ground = false;
 			}
 			player_camera ^= true;
 		}
 	}
 
 	void handleCameraMovement(float dt) {
-		//move up, down
-		if(getKey(SAPP_KEYCODE_SPACE).held) cam_pos.y+=4.f*dt;
-		if(getKey(SAPP_KEYCODE_LEFT_SHIFT).held) cam_pos.y-=4.f*dt;
+
+		if (!player_camera)
+		{
+			//move up, down
+			if (getKey(SAPP_KEYCODE_SPACE).held) cam.pos.y += 4.f * dt;
+			if (getKey(SAPP_KEYCODE_LEFT_SHIFT).held) cam.pos.y -= 4.f * dt;
+		}
 
 		//move forward, backward
-		vf3d fb_dir(std::sin(cam_yaw), 0, std::cos(cam_yaw));
-		if(getKey(SAPP_KEYCODE_W).held) cam_pos+=5.f*dt*fb_dir;
-		if(getKey(SAPP_KEYCODE_S).held) cam_pos-=3.f*dt*fb_dir;
+		vf3d fb_dir(std::sin(cam.yaw), 0, std::cos(cam.yaw));
+		if(getKey(SAPP_KEYCODE_W).held) cam.pos+=5.f*dt*fb_dir;
+		if(getKey(SAPP_KEYCODE_S).held) cam.pos-=3.f*dt*fb_dir;
 
 		//move left, right
 		vf3d lr_dir(fb_dir.z, 0, -fb_dir.x);
-		if(getKey(SAPP_KEYCODE_A).held) cam_pos+=4.f*dt*lr_dir;
-		if(getKey(SAPP_KEYCODE_D).held) cam_pos-=4.f*dt*lr_dir;
+		if(getKey(SAPP_KEYCODE_A).held) cam.pos+=4.f*dt*lr_dir;
+		if(getKey(SAPP_KEYCODE_D).held) cam.pos-=4.f*dt*lr_dir;
 	}
 
 	void handleUserInput(float dt) {
 		handleCameraLooking(dt);
 
 		//polar to cartesian
-		cam_dir=polar3D(cam_yaw, cam_pitch);
+		cam.dir=polar3D(cam.yaw, cam.pitch);
+		if (getKey(SAPP_KEYCODE_R).held) mainlight->pos = cam.pos;
 
 		handleCameraMovement(dt);
 	}
 
 
 	//make billboard always point at camera.
-	void updateBillboard(float dt) {
+	void updateBillboard(Object& obj, float dt) {
 		//move with player 
-		vf3d eye_pos=bb.shp.translation;
-		vf3d target=cam_pos;
+		vf3d eye_pos= obj.translation;
+		vf3d target=cam.pos;
 
 		vf3d y_axis(0, 1, 0);
 		vf3d z_axis=(target-eye_pos).norm();
@@ -297,7 +384,7 @@ struct Demo : SokolEngine {
 		y_axis=z_axis.cross(x_axis);
 		
 		//slightly different than makeLookAt.
-		mat4& m=bb.shp.model;
+		mat4& m= obj.model;
 		m(0, 0)=x_axis.x, m(0, 1)=y_axis.x, m(0, 2)=z_axis.x, m(0, 3)=eye_pos.x;
 		m(1, 0)=x_axis.y, m(1, 1)=y_axis.y, m(1, 2)=z_axis.y, m(1, 3)=eye_pos.y;
 		m(2, 0)=x_axis.z, m(2, 1)=y_axis.z, m(2, 2)=z_axis.z, m(2, 3)=eye_pos.z;
@@ -309,27 +396,27 @@ struct Demo : SokolEngine {
 		//
 		if (angle < -0.70 && angle > -2.35 )
 		{
-			bb.anim = 1; //front
+			obj.anim = 1; //front
 		}
 		if (angle < -2.35 && angle < 2.35)
 		{
-			bb.anim = 4; //left
+			obj.anim = 4; //left
 		}
 		if (angle > -0.70 && angle < 0.70)
 		{
-			bb.anim = 8; //right
+			obj.anim = 8; //right
 		}
 		if (angle > 0.70 && angle < 2.35) 
 		{
-			bb.anim = 12; //back
+			obj.anim = 12; //back
 		}
-		//bb.anim_timer-=dt;
-		//if(bb.anim_timer<0) {
-		//	bb.anim_timer+=.5f;
+		//obj.anim_timer-=dt;
+		//if(obj.anim_timer<0) {
+		//	obj.anim_timer+=.5f;
 		//
 		//	//increment animation index and wrap
-		//	bb.anim++;
-		//	bb.anim%=bb.num_ttl;
+		//	obj.anim++;
+		//	obj.anim%=obj.num_ttl;
 		//}
 	}
 
@@ -346,25 +433,36 @@ struct Demo : SokolEngine {
 		}
 	}
 
-	void updatePhysics(float dt)
+	void updatePhysics(Object& obj,float dt)
 	{
-		if (player_camera)
+		if (player_camera && !obj.isbillboard)
 		{
+			player_pos = cam.pos - vf3d(0, player_height, 0);
+
 			contact_test = false;
-			player_pos = cam_pos - vf3d(0, player_height, 0);
+			float w = 1;
+			mat4 inv_model = mat4::inverse(obj.model);
+			vf3d pt = matMulVec(inv_model, player_pos, w);
 			float record = 0.5f;
+			float dist_sq = 0;
+
+			if (!player_on_ground)
+			{
+				player_vel += gravity * dt;
+				player_pos += player_vel * dt;
+			}
 
 			vf3d* closest = nullptr;
-			for (const auto& t : platform.mesh.tris) {
-				vf3d close_pt = platform.mesh.getClosePt(player_pos,
-					platform.mesh.verts[t.a].pos,
-					platform.mesh.verts[t.b].pos,
-					platform.mesh.verts[t.c].pos
+			for (const auto& t : obj.mesh.tris) {
+				vf3d close_pt = obj.mesh.getClosePt(pt,
+					obj.mesh.verts[t.a].pos,
+					obj.mesh.verts[t.b].pos,
+					obj.mesh.verts[t.c].pos
 				);
 
-				float dist_sq = (close_pt - player_pos).mag_sq();
+				dist_sq = (close_pt - pt).mag_sq();
 				
-				int i = 0;
+				
 
 				if (!closest && dist_sq < record)
 				{
@@ -372,39 +470,32 @@ struct Demo : SokolEngine {
 					record = dist_sq;
 					closest = &close_pt;
 				}
+
+				int i = 0;
+				if (dist_sq < player_rad * player_rad)
+				{
+					vf3d norm = closest->norm();
+					float fix = player_rad - std::sqrtf(dist_sq);
+					player_pos += fix * norm;
+					player_vel = { 0,0,0 };
+					player_on_ground = true;
+				}
+				//else
+				//{
+				//	player_on_ground = false;
+				//}
 			}
 
 			if (closest)
 			{
+				
 				contact_test = true;
 			}
 
-			//localize point
+
+
+			cam.pos = player_pos + vf3d(0, player_height, 0);
 			
-			//contact_test = false;
-			//player_pos = cam_pos - vf3d(0, player_height, 0);
-			//float w = 1;
-			//mat4 inv_model = mat4::inverse(platform.model);
-			//vf3d pt = matMulVec(inv_model, player_pos, w);
-			//
-			//
-			//
-			//float record_sq = -1;
-			//for (const auto& t : platform.mesh.tris) {
-			//	vf3d close_pt = platform.mesh.getClosePt(pt,
-			//		platform.mesh.verts[t.a].pos,
-			//		platform.mesh.verts[t.b].pos,
-			//		platform.mesh.verts[t.c].pos
-			//	);
-			//	float dist_sq = (close_pt - pt).mag_sq();
-			//	if (record_sq < 0 || dist_sq < record_sq) {
-			//		record_sq = dist_sq;
-			//		pt = close_pt;
-			//		contact_test = true;
-			//		
-			//		//norm = (b - a).cross(c - a).norm();
-			//	}
-			//}
 		}
 
 		
@@ -419,44 +510,57 @@ struct Demo : SokolEngine {
 	void userUpdate(float dt) {
 		handleUserInput(dt);
 		updateGui(dt);
-		updateBillboard(dt);
-		updatePhysics(dt);
+
+		for (auto& obj : objects)
+		{
+			if (obj.isbillboard)
+			{
+				updateBillboard(obj, dt);
+				
+			}
+			updatePhysics(obj, dt);
+		}
+
+		
 	}
 
 #pragma region RENDER HELPERS
-	void renderPlatform(const mat4& view_proj) {
+	void renderPlatform(Object& obj,const mat4& view_proj) {
 		sg_bindings bind{};
-		bind.vertex_buffers[0]=platform.mesh.vbuf;
-		bind.index_buffer=platform.mesh.ibuf;
+		bind.vertex_buffers[0]=obj.mesh.vbuf;
+		bind.index_buffer= obj.mesh.ibuf;
 		bind.samplers[SMP_default_smp]=sampler;
-		bind.views[VIEW_default_tex]=platform.tex;
+		bind.views[VIEW_default_tex] = obj.tex;
 		sg_apply_bindings(bind);
 
 		//pass transformation matrix
-		mat4 mvp=mat4::mul(view_proj, platform.model);
+		mat4 mvp=mat4::mul(view_proj, obj.model);
 		vs_params_t vs_params{};
+		std::memcpy(vs_params.u_model, obj.model.m, sizeof(vs_params.u_model));
 		std::memcpy(vs_params.u_mvp, mvp.m, sizeof(mvp.m));
 		sg_apply_uniforms(UB_vs_params, SG_RANGE(vs_params));
 
 		//render entire texture.
 		fs_params_t fs_params{};
+
+
 		fs_params.u_tl[0]=0, fs_params.u_tl[1]=0;
 		fs_params.u_br[0]=1, fs_params.u_br[1]=1;
 		sg_apply_uniforms(UB_fs_params, SG_RANGE(fs_params));
 
-		sg_draw(0, 3*platform.mesh.tris.size(), 1);
+		sg_draw(0, 3* obj.mesh.tris.size(), 1);
 	}
 	
-	void renderBillboard(const mat4& view_proj) {
+	void renderBillboard(Object& obj,const mat4& view_proj) {
 		sg_bindings bind{};
-		bind.vertex_buffers[0]=bb.shp.mesh.vbuf;
-		bind.index_buffer=bb.shp.mesh.ibuf;
+		bind.vertex_buffers[0]= obj.mesh.vbuf;
+		bind.index_buffer= obj.mesh.ibuf;
 		bind.samplers[SMP_default_smp]=sampler;
-		bind.views[VIEW_default_tex]=bb.shp.tex;
+		bind.views[VIEW_default_tex]= obj.tex;
 		sg_apply_bindings(bind);
 
 		//pass transformation matrix
-		mat4 mvp=mat4::mul(view_proj, bb.shp.model);
+		mat4 mvp=mat4::mul(view_proj, obj.model);
 		vs_params_t vs_params{};
 		std::memcpy(vs_params.u_mvp, mvp.m, sizeof(mvp.m));
 		sg_apply_uniforms(UB_vs_params, SG_RANGE(vs_params));
@@ -464,19 +568,19 @@ struct Demo : SokolEngine {
 		//which region of texture to sample?
 
 		fs_params_t fs_params{};
-		int row=bb.anim/bb.num_x;
-		int col=bb.anim%bb.num_x;
-		float u_left=col/float(bb.num_x);
-		float u_right=(1+col)/float(bb.num_x);
-		float v_top=row/float(bb.num_y);
-		float v_btm=(1+row)/float(bb.num_y);
+		int row= obj.anim/ obj.num_x;
+		int col= obj.anim% obj.num_x;
+		float u_left=col/float(obj.num_x);
+		float u_right=(1+col)/float(obj.num_x);
+		float v_top=row/float(obj.num_y);
+		float v_btm=(1+row)/float(obj.num_y);
 		fs_params.u_tl[0]=u_left;
 		fs_params.u_tl[1]=v_top;
 		fs_params.u_br[0]=u_right;
 		fs_params.u_br[1]=v_btm;
 		sg_apply_uniforms(UB_fs_params, SG_RANGE(fs_params));
 
-		sg_draw(0, 3*bb.shp.mesh.tris.size(), 1);
+		sg_draw(0, 3* obj.mesh.tris.size(), 1);
 	}
 
 	void render_Quad()
@@ -511,6 +615,49 @@ struct Demo : SokolEngine {
 
 	}
 
+	void renderObjects(Object& obj)
+	{
+		fs_params_t fs_params{};
+
+		//adding lights
+		fs_params.u_num_lights = lights.size();
+		int idx = 0;
+		for (const auto& l : lights)
+		{
+			fs_params.u_light_pos[idx][0] = l.pos.x;
+			fs_params.u_light_pos[idx][1] = l.pos.y;
+			fs_params.u_light_pos[idx][2] = l.pos.z;
+			fs_params.u_light_col[idx][0] = l.col.r;
+			fs_params.u_light_col[idx][1] = l.col.g;
+			fs_params.u_light_col[idx][2] = l.col.b;
+			idx++;
+		}
+
+		fs_params.u_view_pos[0] = cam.pos.x;
+		fs_params.u_view_pos[1] = cam.pos.y;
+		fs_params.u_view_pos[2] = cam.pos.z;
+		sg_apply_uniforms(UB_fs_params, SG_RANGE(fs_params));
+
+		//update bindings
+		sg_bindings bind{};
+		bind.vertex_buffers[0] = obj.mesh.vbuf;
+		bind.index_buffer = obj.mesh.ibuf;
+		bind.samplers[SMP_default_smp] = sampler;
+		bind.views[VIEW_default_tex] = obj.tex;
+		sg_apply_bindings(bind);
+		
+		//send vertex uniforms
+		vs_params_t vs_params{}; 
+		mat4 mvp = mat4::mul(cam.view_proj, obj.model);
+		std::memcpy(vs_params.u_model, obj.model.m, sizeof(vs_params.u_model));
+		std::memcpy(vs_params.u_mvp, mvp.m, sizeof(vs_params.u_mvp));
+		sg_apply_uniforms(UB_vs_params, SG_RANGE(vs_params));
+
+		sg_draw(0, 3 * obj.mesh.tris.size(), 1);
+
+	}
+
+
 #pragma endregion
 	
 	void userRender() {
@@ -520,7 +667,7 @@ struct Demo : SokolEngine {
 		sg_begin_pass(pass);
 
 		//camera transformation matrix
-		mat4 look_at=mat4::makeLookAt(cam_pos, cam_pos+cam_dir, {0, 1, 0});
+		mat4 look_at=mat4::makeLookAt(cam.pos, cam.pos+cam.dir, {0, 1, 0});
 		mat4 cam_view=mat4::inverse(look_at);
 
 		//perspective
@@ -530,11 +677,41 @@ struct Demo : SokolEngine {
 		mat4 cam_view_proj=mat4::mul(cam_proj, cam_view);
 
 		sg_apply_pipeline(default_pip);
-		
-		renderPlatform(cam_view_proj);
 
-		//renderBillboard(cam_view_proj);
-		if (contact_test)
+		//lighting test
+		fs_params_t fs_params{};
+		{
+
+			fs_params.u_num_lights = lights.size();
+			int idx = 0;
+			for (const auto& l : lights)
+			{
+				fs_params.u_light_pos[idx][0] = l.pos.x;
+				fs_params.u_light_pos[idx][1] = l.pos.y;
+				fs_params.u_light_pos[idx][2] = l.pos.z;
+				fs_params.u_light_col[idx][0] = l.col.r;
+				fs_params.u_light_col[idx][1] = l.col.g;
+				fs_params.u_light_col[idx][2] = l.col.b;
+				idx++;
+			}
+		}
+
+		fs_params.u_view_pos[0] = cam_pos.x;
+		fs_params.u_view_pos[1] = cam_pos.y;
+		fs_params.u_view_pos[2] = cam_pos.z;
+		sg_apply_uniforms(UB_fs_params, SG_RANGE(fs_params));
+		
+
+		for (auto& obj : objects)
+		{
+			if (obj.isbillboard)
+			{
+				renderBillboard(obj, cam_view_proj);
+			}
+			renderPlatform(obj, cam_view_proj);
+			//renderObjects(obj);
+		}
+		//if (contact_test)
 		{
 			render_Quad();
 		}
