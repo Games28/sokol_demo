@@ -116,7 +116,7 @@ struct Demo : SokolEngine {
 
 	std::vector<Object> objects;
 	const std::vector<std::string> Structurefilenames{
-		"assets/models/desert.txt",
+		"assets/models/deserttest.txt",
 		"assets/models/sandspeeder.txt",
 		"assets/models/tathouse1.txt",
 		"assets/models/tathouse2.txt",
@@ -201,7 +201,7 @@ struct Demo : SokolEngine {
 		b.scale = { 1,1,1 };
 		b.translation = { 0,-2,0 };
 		b.updateMatrixes();
-		b.tex = tex_uv;
+		b.tex = getTexture("assets/poust_1.png");
 		objects.push_back(b);
 	}
 
@@ -210,7 +210,7 @@ struct Demo : SokolEngine {
 		Mesh& m=obj.mesh;
 		m=Mesh::makeCube();
 
-		obj.tex = getTexture("assets/sandtexture.png");
+		obj.tex = getTexture("assets/poust_1.png");
 		
 		obj.scale={10, .25f, 10};
 		obj.translation={0, -1, 0};
