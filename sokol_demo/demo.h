@@ -201,7 +201,7 @@ struct Demo : SokolEngine {
 		b.scale = { 1,1,1 };
 		b.translation = { 0,-2,0 };
 		b.updateMatrixes();
-		b.tex = getTexture("assets/sandtexture.png");
+		b.tex = tex_uv;
 		objects.push_back(b);
 	}
 
@@ -210,7 +210,7 @@ struct Demo : SokolEngine {
 		Mesh& m=obj.mesh;
 		m=Mesh::makeCube();
 
-		obj.tex=tex_uv;
+		obj.tex = getTexture("assets/sandtexture.png");
 		
 		obj.scale={10, .25f, 10};
 		obj.translation={0, -1, 0};
@@ -544,7 +544,29 @@ struct Demo : SokolEngine {
 		sg_apply_uniforms(UB_vs_params, SG_RANGE(vs_params));
 
 		//render entire texture.
+		//fs_params_t fs_params{};
+		//lighting test
 		fs_params_t fs_params{};
+		{
+
+			fs_params.u_num_lights = lights.size();
+			int idx = 0;
+			for (const auto& l : lights)
+			{
+				fs_params.u_light_pos[idx][0] = l.pos.x;
+				fs_params.u_light_pos[idx][1] = l.pos.y;
+				fs_params.u_light_pos[idx][2] = l.pos.z;
+				fs_params.u_light_col[idx][0] = l.col.r;
+				fs_params.u_light_col[idx][1] = l.col.g;
+				fs_params.u_light_col[idx][2] = l.col.b;
+				idx++;
+			}
+		}
+
+		fs_params.u_view_pos[0] = cam_pos.x;
+		fs_params.u_view_pos[1] = cam_pos.y;
+		fs_params.u_view_pos[2] = cam_pos.z;
+		//sg_apply_uniforms(UB_fs_params, SG_RANGE(fs_params));
 
 
 		fs_params.u_tl[0]=0, fs_params.u_tl[1]=0;
@@ -620,43 +642,43 @@ struct Demo : SokolEngine {
 
 	void renderObjects(Object& obj)
 	{
-		fs_params_t fs_params{};
-
-		//adding lights
-		fs_params.u_num_lights = lights.size();
-		int idx = 0;
-		for (const auto& l : lights)
-		{
-			fs_params.u_light_pos[idx][0] = l.pos.x;
-			fs_params.u_light_pos[idx][1] = l.pos.y;
-			fs_params.u_light_pos[idx][2] = l.pos.z;
-			fs_params.u_light_col[idx][0] = l.col.r;
-			fs_params.u_light_col[idx][1] = l.col.g;
-			fs_params.u_light_col[idx][2] = l.col.b;
-			idx++;
-		}
-
-		fs_params.u_view_pos[0] = cam.pos.x;
-		fs_params.u_view_pos[1] = cam.pos.y;
-		fs_params.u_view_pos[2] = cam.pos.z;
-		sg_apply_uniforms(UB_fs_params, SG_RANGE(fs_params));
-
-		//update bindings
-		sg_bindings bind{};
-		bind.vertex_buffers[0] = obj.mesh.vbuf;
-		bind.index_buffer = obj.mesh.ibuf;
-		bind.samplers[SMP_default_smp] = sampler;
-		bind.views[VIEW_default_tex] = obj.tex;
-		sg_apply_bindings(bind);
-		
-		//send vertex uniforms
-		vs_params_t vs_params{}; 
-		mat4 mvp = mat4::mul(cam.view_proj, obj.model);
-		std::memcpy(vs_params.u_model, obj.model.m, sizeof(vs_params.u_model));
-		std::memcpy(vs_params.u_mvp, mvp.m, sizeof(vs_params.u_mvp));
-		sg_apply_uniforms(UB_vs_params, SG_RANGE(vs_params));
-
-		sg_draw(0, 3 * obj.mesh.tris.size(), 1);
+		//fs_params_t fs_params{};
+		//
+		////adding lights
+		//fs_params.u_num_lights = lights.size();
+		//int idx = 0;
+		//for (const auto& l : lights)
+		//{
+		//	fs_params.u_light_pos[idx][0] = l.pos.x;
+		//	fs_params.u_light_pos[idx][1] = l.pos.y;
+		//	fs_params.u_light_pos[idx][2] = l.pos.z;
+		//	fs_params.u_light_col[idx][0] = l.col.r;
+		//	fs_params.u_light_col[idx][1] = l.col.g;
+		//	fs_params.u_light_col[idx][2] = l.col.b;
+		//	idx++;
+		//}
+		//
+		//fs_params.u_view_pos[0] = cam.pos.x;
+		//fs_params.u_view_pos[1] = cam.pos.y;
+		//fs_params.u_view_pos[2] = cam.pos.z;
+		//sg_apply_uniforms(UB_fs_params, SG_RANGE(fs_params));
+		//
+		////update bindings
+		//sg_bindings bind{};
+		//bind.vertex_buffers[0] = obj.mesh.vbuf;
+		//bind.index_buffer = obj.mesh.ibuf;
+		//bind.samplers[SMP_default_smp] = sampler;
+		//bind.views[VIEW_default_tex] = obj.tex;
+		//sg_apply_bindings(bind);
+		//
+		////send vertex uniforms
+		//vs_params_t vs_params{}; 
+		//mat4 mvp = mat4::mul(cam.view_proj, obj.model);
+		//std::memcpy(vs_params.u_model, obj.model.m, sizeof(vs_params.u_model));
+		//std::memcpy(vs_params.u_mvp, mvp.m, sizeof(vs_params.u_mvp));
+		//sg_apply_uniforms(UB_vs_params, SG_RANGE(vs_params));
+		//
+		//sg_draw(0, 3 * obj.mesh.tris.size(), 1);
 
 	}
 
@@ -681,28 +703,7 @@ struct Demo : SokolEngine {
 
 		sg_apply_pipeline(default_pip);
 
-		//lighting test
-		fs_params_t fs_params{};
-		{
-
-			fs_params.u_num_lights = lights.size();
-			int idx = 0;
-			for (const auto& l : lights)
-			{
-				fs_params.u_light_pos[idx][0] = l.pos.x;
-				fs_params.u_light_pos[idx][1] = l.pos.y;
-				fs_params.u_light_pos[idx][2] = l.pos.z;
-				fs_params.u_light_col[idx][0] = l.col.r;
-				fs_params.u_light_col[idx][1] = l.col.g;
-				fs_params.u_light_col[idx][2] = l.col.b;
-				idx++;
-			}
-		}
-
-		fs_params.u_view_pos[0] = cam_pos.x;
-		fs_params.u_view_pos[1] = cam_pos.y;
-		fs_params.u_view_pos[2] = cam_pos.z;
-		sg_apply_uniforms(UB_fs_params, SG_RANGE(fs_params));
+		
 		
 
 		for (auto& obj : objects)
@@ -712,7 +713,7 @@ struct Demo : SokolEngine {
 				renderBillboard(obj, cam_view_proj);
 			}
 			renderPlatform(obj, cam_view_proj);
-			//renderObjects(obj);
+			
 		}
 		//if (contact_test)
 		{

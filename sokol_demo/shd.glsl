@@ -45,37 +45,37 @@ in vec2 uv;
 out vec4 frag_color;
 
 void main() {
-	const float amb_mag = 1; //0 - 1
-	const vec3 amb_col = vec3(0.03);
+	const float amb_mag=1;//0-1
+	const vec3 amb_col=vec3(0.03);
+	
+	const float shininess=64;//32-256
+	const float spec_mag=1;//0-1
 
-	const float shininess = 64; //32-256
-	const float spec_mag = 1; //0-1
-
-	const float att_k0 = 1.0;
-	const float att_k1 = 0.09;
-	const float att_k2 = 0.032;
+	const float att_k0=1.0;
+	const float att_k1=0.09;
+	const float att_k2=0.032;
 
 	//srgb->linear
-	vec3 base_col_srgb=texture(sampler2D(default_tex, default_smp),u_tl + uv * (u_br - u_tl)).rgb;
-	vec3 base_col = pow(base_col_srgb, vec3(2.2));
+	//vec3 base_col_srgb=texture(sampler2D(default_tex, default_smp),u_tl + uv * (u_br - u_tl)).rgb;
+	vec3 base_col_srgb=texture(sampler2D(default_tex, default_smp), uv).rgb;
+	vec3 base_col=pow(base_col_srgb, vec3(2.2));
 
-	vec3 n = normalize(norm);
-	vec3 v = normalize(u_view_pos - pos);
+	vec3 n=normalize(norm);
+	vec3 v=normalize(u_view_pos- pos);
 
 	//start with ambient
-	vec3 col = amb_col * base_col * amb_mag;
-	for(int i = 0; i < u_num_lights; i++)
-	{
-		vec3 l_pos = u_light_pos[i].xyz;
-		vec3 l_col = u_light_col[i].rgb;
+	vec3 col=amb_col*base_col*amb_mag;
+	for(int i=0; i<u_num_lights; i++) {
+		vec3 l_pos=u_light_pos[i].xyz;
+		vec3 l_col=u_light_col[i].rgb;
 
-		vec3 l = l_pos - pos;
-		float dist = length(l);
-		l /= dist;
+		vec3 l=l_pos-pos;
+		float dist=length(l);
+		l/=dist;
 
-		//diffuse(lambert)
-		float n_dot_l = max(0, dot(n,l));
-		vec3 diffuse = l_col * base_col * n_dot_l;
+		//diffuse(Lambert)
+		float n_dot_l=max(0, dot(n, l));
+		vec3 diffuse=l_col*base_col*n_dot_l;
 
 		//blinn-phong specular
 		vec3 h=normalize(l+v);//half-vector
@@ -87,9 +87,8 @@ void main() {
 		float att=1/(att_k0+att_k1*dist+att_k2*dist*dist);
 
 		col+=att*(diffuse+specular);
-
 	}
-
+	
 	//linear->srgb
 	vec3 col_srgb=pow(col, vec3(1/2.2));
 	frag_color=vec4(col_srgb, 1);
