@@ -486,10 +486,13 @@ struct Demo : SokolEngine {
 				//}
 			}
 
-			if (closest)
+			if (player_on_ground)
 			{
-				
-				contact_test = true;
+				if (closest)
+				{
+					vf3d norm = closest->norm();
+					player_pos -= norm * norm.dot(player_pos);
+				}
 			}
 
 
