@@ -77,6 +77,44 @@ struct Mesh {
 		delete[] ibuf_data;
 	}
 
+	float rayIntersectTri(const vf3d& orig, const vf3d& dir, const vf3d& t0, const vf3d& t1, const vf3d& t2,
+		float* uptr = nullptr, float* vptr = nullptr)
+	{
+		static const float epsilon = 1e-6f;
+
+		vf3d a = dir;
+		vf3d b = t0 - t1;
+		vf3d c = t0 - t2;
+		vf3d d = t0 - orig;
+		vf3d bxc = b.cross(c);
+		float det = a.dot(bxc);
+
+		//parallel
+		if (std::abs(det) < epsilon) return -1;
+
+		vf3d f = c.cross(a) / det;
+		float u = f.dot(d);
+		if (uptr) *uptr = u;
+
+		vf3d g = a.cross(b) / det;
+		float v = g.dot(d);
+		if (vptr) *vptr = v;
+
+		//within unit uv triangle
+		if (u < 0 || u>1) return -1;
+		if (v < 0 || v>1) return -1;
+		if (u + v > 1) return -1;
+
+		//get t
+		vf3d e = bxc / det;
+		float t = e.dot(d);
+
+		//behind ray
+		if (t < 0) return -1;
+
+		return t;
+	}
+
 	static vf3d getClosePt(const vf3d& pt, const vf3d& t0, const vf3d& t1, const vf3d& t2)
 	{
 		vf3d ab = t1 - t0;

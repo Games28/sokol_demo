@@ -104,17 +104,20 @@ struct Demo : SokolEngine {
 	float radian = 0.0174532777777778;
 	//cam info
 	vf3d cam_pos{0, 2, 2};
+	vf3d movement{ 0,0,0 };
 	vf3d cam_dir;
 	float cam_yaw=0;
 	float cam_pitch=0;
 	int anim_index = 0;
 
 	sg_sampler sampler{};
-
+	vf3d current_cam, prevous_cam;
+	mat4 mat_vew, mat_proj;
 	std::vector<Light> lights;
 	Light* mainlight;
 
 	std::vector<Object> objects;
+	Object* held_obj = nullptr;
 	const std::vector<std::string> Structurefilenames{
 		"assets/models/deserttest.txt",
 		"assets/models/sandspeeder.txt",
@@ -236,6 +239,7 @@ struct Demo : SokolEngine {
 
 		obj.translation={0, 1, 0};
 		obj.isbillboard = true;
+		obj.draggable = true;
 
 		obj.tex=getTexture("assets/spritesheet.png");
 		obj.num_x=4, obj.num_y=4;
@@ -316,6 +320,110 @@ struct Demo : SokolEngine {
 	}
 
 #pragma region UPDATE HELPERS
+	//grab testing/////////////////////////////////////////////
+	vf3d segIntersectPlane(const vf3d& a, const vf3d& b, const vf3d& ctr, const vf3d& norm, float* tp = nullptr)
+	{
+		float t = norm.dot(ctr - a) / norm.dot(b - a);
+		if (tp) *tp = t;
+		return a + t * (b - a);
+	}
+
+	float intersectRay(Object& obj,const vf3d& orig_world, const vf3d& dir_world)
+	{
+		float w = 1;
+		mat4 inv_model = mat4::inverse(obj.model);
+		vf3d orig_local = matMulVec(inv_model, orig_world, w);
+		w = 0;
+		vf3d dir_local = matMulVec(inv_model, dir_world, w);
+
+		dir_local = dir_local.norm();
+
+		float record = -1;
+		for (const auto& t : obj.mesh.tris) {
+			float dist = obj.mesh.rayIntersectTri(
+				orig_local,
+				dir_local,
+				obj.mesh.verts[t.a].pos,
+				obj.mesh.verts[t.b].pos,
+				obj.mesh.verts[t.c].pos
+			);
+
+			if (dist < 0) continue;
+
+			//sort while iterating
+			if (record < 0 || dist < record) record = dist;
+
+
+		}
+
+		if (record < 0) return -1;
+
+		vf3d p_local = orig_local + record * dir_local;
+		w = 1;
+		vf3d p_world = matMulVec(obj.model, p_local, w);
+		return(p_world - orig_world).mag();
+	}
+
+
+	void handleGrabActionBegin()
+	{
+		if (getKey(SAPP_KEYCODE_F).pressed)
+		{
+			contact_test = false;
+			float record = -1;
+			Object* close_obj = nullptr;
+			for (auto& o : objects)
+			{
+				if (o.isbillboard)
+				{
+					float dist = intersectRay(o, cam.pos, cam.dir);
+					if (dist < 0) continue;
+					//"sort" while iterating
+					if (record < 0 || dist < record) {
+						record = dist;
+						held_obj = &o;
+						current_cam = cam.pos + record * cam.dir;
+					}
+				}
+			}
+			if (!held_obj) return;
+			
+		}
+	}
+
+	void updateGrabAction()
+	{
+	    int screenWidth = 640, screenHeight = 480;
+
+		float w = 1;
+		if (getKey(SAPP_KEYCODE_F).held && held_obj)
+		{
+			float prev_ndc_x = 1 - 2 * prevous_cam.x / screenWidth;
+			float prev_ndc_y = 1 - 2 * prevous_cam.y / screenHeight;
+			vf3d prev_clip(prev_ndc_x, prev_ndc_y, 1);
+			mat4 invVP = mat4::inverse(mat4::mul(mat_vew,mat_proj));
+			vf3d prev_world = matMulVec(invVP, prev_clip, w);
+			prev_world /= w;
+			vf3d prev_pt = segIntersectPlane(cam.pos, prev_world, current_cam, cam.dir);
+			float curr_ndc_x = 1 - 2 * current_cam.x / screenWidth;
+			float curr_ndc_y = 1 - 2 * current_cam.y / screenHeight;
+			vf3d curr_clip(curr_ndc_x, curr_ndc_y, w);
+			vf3d curr_world = matMulVec(invVP, curr_clip, w);
+			curr_world /= w;
+			vf3d curr_pt = segIntersectPlane(cam.pos, curr_world, current_cam,cam.dir);
+
+			held_obj->translation = curr_pt - prev_pt;
+			held_obj->updateMatrixes();
+		}
+
+		if (getKey(SAPP_KEYCODE_F).released)
+		{
+			held_obj = nullptr;
+		}
+	}
+
+	////////////////////////////////////////////////////////////////////////////////
+
 	void handleCameraLooking(float dt) {
 		//left/right
 		if(getKey(SAPP_KEYCODE_LEFT).held) cam.yaw+=dt;
@@ -343,6 +451,7 @@ struct Demo : SokolEngine {
 
 	void handleCameraMovement(float dt) {
 
+		
 		if (!player_camera)
 		{
 			//move up, down
@@ -359,6 +468,7 @@ struct Demo : SokolEngine {
 		vf3d lr_dir(fb_dir.z, 0, -fb_dir.x);
 		if(getKey(SAPP_KEYCODE_A).held) cam.pos+=4.f*dt*lr_dir;
 		if(getKey(SAPP_KEYCODE_D).held) cam.pos-=4.f*dt*lr_dir;
+		prevous_cam = cam.pos;
 	}
 
 	void handleUserInput(float dt) {
@@ -439,7 +549,7 @@ struct Demo : SokolEngine {
 		{
 			player_pos = cam.pos - vf3d(0, player_height, 0);
 
-			contact_test = false;
+			//contact_test = false;
 			float w = 1;
 			mat4 inv_model = mat4::inverse(obj.model);
 			vf3d pt = matMulVec(inv_model, player_pos, w);
@@ -524,6 +634,8 @@ struct Demo : SokolEngine {
 			updatePhysics(obj, dt);
 		}
 
+		handleGrabActionBegin();
+		updateGrabAction();
 		
 	}
 
@@ -640,48 +752,7 @@ struct Demo : SokolEngine {
 
 	}
 
-	void renderObjects(Object& obj)
-	{
-		//fs_params_t fs_params{};
-		//
-		////adding lights
-		//fs_params.u_num_lights = lights.size();
-		//int idx = 0;
-		//for (const auto& l : lights)
-		//{
-		//	fs_params.u_light_pos[idx][0] = l.pos.x;
-		//	fs_params.u_light_pos[idx][1] = l.pos.y;
-		//	fs_params.u_light_pos[idx][2] = l.pos.z;
-		//	fs_params.u_light_col[idx][0] = l.col.r;
-		//	fs_params.u_light_col[idx][1] = l.col.g;
-		//	fs_params.u_light_col[idx][2] = l.col.b;
-		//	idx++;
-		//}
-		//
-		//fs_params.u_view_pos[0] = cam.pos.x;
-		//fs_params.u_view_pos[1] = cam.pos.y;
-		//fs_params.u_view_pos[2] = cam.pos.z;
-		//sg_apply_uniforms(UB_fs_params, SG_RANGE(fs_params));
-		//
-		////update bindings
-		//sg_bindings bind{};
-		//bind.vertex_buffers[0] = obj.mesh.vbuf;
-		//bind.index_buffer = obj.mesh.ibuf;
-		//bind.samplers[SMP_default_smp] = sampler;
-		//bind.views[VIEW_default_tex] = obj.tex;
-		//sg_apply_bindings(bind);
-		//
-		////send vertex uniforms
-		//vs_params_t vs_params{}; 
-		//mat4 mvp = mat4::mul(cam.view_proj, obj.model);
-		//std::memcpy(vs_params.u_model, obj.model.m, sizeof(vs_params.u_model));
-		//std::memcpy(vs_params.u_mvp, mvp.m, sizeof(vs_params.u_mvp));
-		//sg_apply_uniforms(UB_vs_params, SG_RANGE(vs_params));
-		//
-		//sg_draw(0, 3 * obj.mesh.tris.size(), 1);
-
-	}
-
+	
 
 #pragma endregion
 	
@@ -693,11 +764,13 @@ struct Demo : SokolEngine {
 
 		//camera transformation matrix
 		mat4 look_at=mat4::makeLookAt(cam.pos, cam.pos+cam.dir, {0, 1, 0});
+		mat_vew = look_at;
 		mat4 cam_view=mat4::inverse(look_at);
+
 
 		//perspective
 		mat4 cam_proj=mat4::makePerspective(90.f, sapp_widthf()/sapp_heightf(), .001f, 1000);
-
+		mat_proj = cam_proj;
 		//premultiply transform
 		mat4 cam_view_proj=mat4::mul(cam_proj, cam_view);
 
@@ -715,7 +788,7 @@ struct Demo : SokolEngine {
 			renderPlatform(obj, cam_view_proj);
 			
 		}
-		//if (contact_test)
+		if (contact_test)
 		{
 			render_Quad();
 		}

@@ -124,6 +124,8 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="demo.h" />
+    <ClInclude Include="math\mat4.h" />
+    <ClInclude Include="math\v3d.h" />
     <ClInclude Include="mesh.h" />
     <ClInclude Include="return_code.h" />
     <ClInclude Include="shd.glsl.h" />
