@@ -381,7 +381,7 @@ struct Demo : SokolEngine {
 		{
 			if (o.isbillboard)
 			{
-				float dist = intersectRay(o, cam.pos, current_dir);
+				float dist = intersectRay(o, cam.pos, cam.dir);
 				if (dist < 0) continue;
 				//"sort" while iterating
 				if (record < 0 || dist < record) {
@@ -648,11 +648,11 @@ struct Demo : SokolEngine {
 #pragma endregion
 
 	void userUpdate(float dt) {
-		
+		updateCameraRay();
 		handleUserInput(dt);
 		updateGui(dt);
 
-		updateCameraRay();
+		
 
 		for (auto& obj : objects)
 		{
@@ -664,7 +664,7 @@ struct Demo : SokolEngine {
 			updatePhysics(obj, dt);
 		}
 
-		
+		handleGrabActionBegin();
 		
 		
 	}
